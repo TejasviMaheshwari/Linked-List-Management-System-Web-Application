@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linked List Application</title>
+  
+  <!-- Tailwind CSS for styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome for standard browser icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- React & ReactDOM (Standalone browser versions) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  
+  <!-- Babel to translate the React JSX code right inside the browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased">
+  
+  <!-- This is where our React app will be injected -->
+  <div id="root"></div>
+
+  <!-- The actual logic -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- Reusable UI Components ---
+    const Button = ({ children, onClick, variant = 'primary', className = '', ...props }) => {
+      const baseStyle = "flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+      const variants = {
+        primary: "bg-blue-600 hover:bg-blue-700 text-white focus:ring-blue-500 shadow-sm",
+        secondary: "bg-slate-200 hover:bg-slate-300 text-slate-800 focus:ring-slate-500",
+        danger: "bg-red-500 hover:bg-red-600 text-white focus:ring-red-500 shadow-sm",
+        outline: "border-2 border-slate-300 hover:border-blue-500 hover:text-blue-600 text-slate-600 focus:ring-blue-500",
+        ghost: "hover:bg-slate-100 text-slate-600 hover:text-blue-600"
+      };
+      
+      return (
+        <button 
+          onClick={onClick} 
+          className={`${baseStyle} ${variants[variant]} ${className} gap-2`}
+          {...props}
+        >
+          {children}
+        </button>
+      );
+    };
+
+    const Input = ({ label, ...props }) => (
+      <div className="flex flex-col space-y-1 w-full">
+        {label && <label className="text-sm font-medium text-slate-700">{label}</label>}
+        <input 
+          className="px-4 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          {...props}
+        />
+      </div>
+    );
+
+    // --- Visualizer Component ---
+    const NodeVisualizer = ({ nodes, mode, isRecycleBin = false, highlightedId = null }) => {
+      if (nodes.length === 0) {
+        return (
+          <div className="flex items-center justify-center h-48 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
+            <p className="text-slate-500 font-medium">
+              {isRecycleBin ? "Recycle Bin is Empty" : "Link List is Empty"}
+            </p>
+          </div>
+        );
+      }
+
+      return (
+        <div className="flex items-center space-x-3 overflow-x-auto p-6 min-h-[200px] border-2 border-slate-200 rounded-xl bg-slate-50/50 relative">
+          <div className="flex-shrink-0 text-slate-400 font-bold tracking-widest text-sm">
+            {mode === 'doubly' ? 'NULL ⟵' : 'HEAD ⟶'}
+          </div>
+          
+          {nodes.map((node, index) => (
+            <React.Fragment key={node.id}>
+              <div className={`flex-shrink-0 w-64 bg-white rounded-xl shadow-sm border-2 transition-all duration-300 transform hover:-translate-y-1 ${highlightedId === node.id ? 'border-yellow-400 shadow-yellow-100 shadow-lg scale-105' : 'border-blue-200'}`}>
+                <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/50 rounded-t-xl flex justify-between items-center">
+                  <span className="text-xs font-bold text-blue-600">{node.id}</span>
+                  <i className="fa-solid fa-database text-slate-400 text-xs"></i>
+                </div>
+                <div className="p-4 space-y-2">
+                  <div className="font-semibold text-slate-800 truncate">{node.name}</div>
+                  <div className="text-sm text-slate-600 italic line-clamp-2">"{node.tweet}"</div>
+                </div>
+              </div>
+              
+              {index < nodes.length - 1 && (
+                <div className="flex-shrink-0 text-slate-400 flex items-center justify-center w-8">
+                  {mode === 'doubly' ? <i className="fa-solid fa-arrows-left-right text-2xl"></i> : <i className="fa-solid fa-arrow-right text-2xl"></i>}
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+
+          <div className="flex-shrink-0 text-slate-400 font-bold tracking-widest text-sm">
+            {mode === 'doubly' ? '⟶ NULL' : '⟶ NULL'}
+          </div>
+        </div>
+      );
+    };
+
+    // --- Main Application ---
+    function App() {
+      const [appMode, setAppMode] = useState('menu');
+      
+      const [nodes, setNodes] = useState([]);
+      const [recycleNodes, setRecycleNodes] = useState([]);
+      const [autoId, setAutoId] = useState(1001);
+      
+      const [activeMenu, setActiveMenu] = useState('main');
+      const [activeSubMenu, setActiveSubMenu] = useState('');
+      const [logs, setLogs] = useState([]);
+      const [highlightedId, setHighlightedId] = useState(null);
+      const [viewingRecycle, setViewingRecycle] = useState(false);
+
+      const [formData, setFormData] = useState({ name: '', tweet: '', pos: '', query: '' });
+      const consoleEndRef = useRef(null);
+
+      // Simulated local file storage loading
+      useEffect(() => {
+        if (appMode !== 'menu') {
+          const dataStr = localStorage.getItem(`${appMode}_data`);
+          if (dataStr) {
+            const parsed = JSON.parse(dataStr);
+            setNodes(parsed.nodes || []);
+            setRecycleNodes(parsed.recycleNodes || []);
+            setAutoId(parsed.autoId || 1001);
+            log(`Loaded ${appMode} link list data from local storage.`);
+          } else {
+            setNodes([]);
+            setRecycleNodes([]);
+            setAutoId(1001);
+            log(`Initialized new ${appMode} link list.`);
+          }
+        }
+      }, [appMode]);
+
+      // Simulated local file storage saving
+      useEffect(() => {
+        if (appMode !== 'menu') {
+          localStorage.setItem(`${appMode}_data`, JSON.stringify({ nodes, recycleNodes, autoId }));
+        }
+      }, [nodes, recycleNodes, autoId, appMode]);
+
+      // Auto-scroll terminal
+      useEffect(() => {
+        consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [logs]);
+
+      const log = (msg) => {
+        const time = new Date().toLocaleTimeString([], { hour12: false });
+        setLogs(prev => [...prev, `[${time}] ${msg}`]);
+      };
+
+      const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+      
+      const resetForm = () => {
+        setFormData({ name: '', tweet: '', pos: '', query: '' });
+        setHighlightedId(null);
+      };
+
+      const navigateMenu = (menu, isRecycle = false) => {
+        setActiveMenu(menu);
+        setActiveSubMenu('');
+        resetForm();
+        setViewingRecycle(isRecycle);
+      };
+
+      // --- Link List Operations ---
+      const handleInsert = (position) => {
+        if (!formData.name || !formData.tweet) return log("Error: User Name and Tweet cannot be empty.");
+        
+        const newNode = { id: `TWEET${autoId}`, name: formData.name, tweet: formData.tweet };
+        let newNodes = [...nodes];
+        
+        if (position === 'beg') {
+          newNodes.unshift(newNode);
+          log(`Inserted at beginning: [ ${newNode.id} , ${newNode.name} ]`);
+        } else if (position === 'end') {
+          newNodes.push(newNode);
+          log(`Inserted at end: [ ${newNode.id} , ${newNode.name} ]`);
+        } else if (position === 'pos') {
+          const pos = parseInt(formData.pos);
+          if (isNaN(pos) || pos < 1 || pos > nodes.length + 1) return log(`Error: Invalid position (1 - ${nodes.length + 1})`);
+          newNodes.splice(pos - 1, 0, newNode);
+          log(`Inserted at position ${pos}: [ ${newNode.id} , ${newNode.name} ]`);
+        }
+
+        setNodes(newNodes);
+        setAutoId(autoId + 1);
+        navigateMenu('main');
+      };
+
+      const handleDelete = (position, isPermanent = false) => {
+        if (nodes.length === 0) return log("Error: Link List is Empty...");
+
+        let newNodes = [...nodes];
+        let deletedNode = null;
+
+        if (position === 'beg') {
+          deletedNode = newNodes.shift();
+        } else if (position === 'end') {
+          deletedNode = newNodes.pop();
+        } else if (position === 'pos') {
+          const pos = parseInt(formData.pos);
+          if (isNaN(pos) || pos < 1 || pos > nodes.length) return log(`Error: Invalid position (1 - ${nodes.length})`);
+          deletedNode = newNodes.splice(pos - 1, 1)[0];
+        }
+
+        setNodes(newNodes);
+        if (isPermanent) {
+          log(`Permanently deleted: [ ${deletedNode.id} ]`);
+        } else {
+          setRecycleNodes([...recycleNodes, deletedNode]);
+          log(`Moved to Recycle Bin: [ ${deletedNode.id} ]`);
+        }
+        navigateMenu('main');
+      };
+
+      const handleSearch = (type) => {
+        if (!formData.query) return log("Error: Search query cannot be empty.");
+        setHighlightedId(null); 
+
+        setTimeout(() => { 
+          let found = false;
+          if (type === 'id') {
+            const queryId = formData.query.toUpperCase().includes('TWEET') ? formData.query.toUpperCase() : `TWEET${formData.query}`;
+            const node = nodes.find(n => n.id === queryId);
+            if (node) {
+              setHighlightedId(node.id);
+              log(`Found by ID: [ ${node.id} , ${node.name} , "${node.tweet}" ]`);
+              found = true;
+            }
+          } else {
+            const node = nodes.find(n => n.name.toLowerCase() === formData.query.toLowerCase());
+            if (node) {
+              setHighlightedId(node.id);
+              log(`Found by Name: [ ${node.id} , ${node.name} , "${node.tweet}" ]`);
+              found = true;
+            }
+          }
+          if (!found) log("No Tweet Found.");
+        }, 50);
+      };
+
+      const handleTraverse = (direction) => {
+        if (nodes.length === 0) return log("Linklist is Empty");
+        let result = 'NULL <- ';
+        const targetNodes = direction === 'forward' ? nodes : [...nodes].reverse();
+        targetNodes.forEach(n => result += `[ ${n.id} , ${n.name} , "${n.tweet}" ] -> `);
+        result += 'NULL';
+        log(`Traversal (${direction}): \n${result}`);
+        navigateMenu('main');
+      };
+
+      const handleRecycleRecover = () => {
+        if (!formData.query) return log("Error: Enter Tweet ID.");
+        const queryId = formData.query.toUpperCase().includes('TWEET') ? formData.query.toUpperCase() : `TWEET${formData.query}`;
+        const index = recycleNodes.findIndex(n => n.id === queryId);
+        
+        if (index === -1) return log("ID not found in Recycle Bin...");
+        
+        const nodeToRecover = recycleNodes[index];
+        const newRecycle = [...recycleNodes];
+        newRecycle.splice(index, 1);
+        
+        setRecycleNodes(newRecycle);
+        setNodes([...nodes, nodeToRecover]);
+        log(`Tweet recovered successfully: [ ${nodeToRecover.id} ]`);
+        resetForm();
+      };
+
+      const handleRecycleDelete = () => {
+        if (!formData.query) return log("Error: Enter Tweet ID.");
+        const queryId = formData.query.toUpperCase().includes('TWEET') ? formData.query.toUpperCase() : `TWEET${formData.query}`;
+        const index = recycleNodes.findIndex(n => n.id === queryId);
+        
+        if (index === -1) return log("ID not found in Recycle Bin...");
+        
+        const nodeToDelete = recycleNodes[index];
+        const newRecycle = [...recycleNodes];
+        newRecycle.splice(index, 1);
+        
+        setRecycleNodes(newRecycle);
+        log(`Tweet permanently deleted from Recycle Bin: [ ${nodeToDelete.id} ]`);
+        resetForm();
+      };
+
+      // --- Rendering UI ---
+      if (appMode === 'menu') {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-6">
+            <div className="max-w-4xl w-full">
+              <div className="text-center mb-12 space-y-4">
+                <h1 className="text-4xl md:text-5xl font-extrabold text-slate-800 tracking-tight">Linked List Application</h1>
+                <p className="text-lg text-slate-600 max-w-2xl mx-auto">Choose the type of linked list you want to work with. Both implementations feature full file handling simulation and a visual interface.</p>
+              </div>
+              <div className="grid md:grid-cols-2 gap-8">
+                <button onClick={() => { setAppMode('singly'); setLogs([]); }} className="bg-white rounded-2xl p-8 shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 border-t-4 border-blue-500 text-left group">
+                  <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 mb-6 group-hover:scale-110 transition-transform">
+                    <i className="fa-solid fa-arrow-right text-2xl"></i>
+                  </div>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Singly Linked List</h2>
+                  <p className="text-slate-600 leading-relaxed">Nodes are connected sequentially. Features standard operations plus a unified recycle bin for safe deletion.</p>
+                </button>
+                <button onClick={() => { setAppMode('doubly'); setLogs([]); }} className="bg-white rounded-2xl p-8 shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 border-t-4 border-indigo-500 text-left group">
+                  <div className="w-14 h-14 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 mb-6 group-hover:scale-110 transition-transform">
+                    <i className="fa-solid fa-arrows-left-right text-2xl"></i>
+                  </div>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Doubly Linked List</h2>
+                  <p className="text-slate-600 leading-relaxed">Nodes have previous and next references. Supports backward traversal and differentiated temporary/permanent deletions.</p>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          <header className="bg-white shadow-sm px-6 py-4 flex justify-between items-center z-10 relative">
+            <div className="flex items-center space-x-3">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white ${appMode === 'singly' ? 'bg-blue-500' : 'bg-indigo-500'}`}>
+                 <i className={`fa-solid ${appMode === 'singly' ? 'fa-arrow-right' : 'fa-arrows-left-right'} text-lg`}></i>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-800 capitalize">{appMode} Linked List</h1>
+                <p className="text-xs text-slate-500 font-medium">Nodes: {nodes.length} | Available TID: TWEET{autoId}</p>
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => setAppMode('menu')} className="text-sm">Main Menu</Button>
+          </header>
+
+          <div className="flex-1 flex flex-col lg:flex-row p-6 gap-6 h-[calc(100vh-76px)]">
+            {/* Control Panel */}
+            <div className="w-full lg:w-80 flex flex-col gap-4 overflow-y-auto">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/80 flex items-center gap-2">
+                  <i className="fa-solid fa-desktop text-slate-500"></i>
+                  <h2 className="font-bold text-slate-700">Operations</h2>
+                </div>
+                
+                {activeMenu === 'main' && (
+                  <div className="p-3 grid gap-2">
+                    <Button variant="ghost" className="justify-start w-full" onClick={() => navigateMenu('insert')}><i className="fa-solid fa-circle-plus w-5"></i> Insertion Operation</Button>
+                    <Button variant="ghost" className="justify-start w-full" onClick={() => navigateMenu('traverse')}><i className="fa-solid fa-play w-5"></i> Traversal Operation</Button>
+                    <Button variant="ghost" className="justify-start w-full" onClick={() => navigateMenu('search')}><i className="fa-solid fa-magnifying-glass w-5"></i> Search Operation</Button>
+                    <Button variant="ghost" className="justify-start w-full" onClick={() => navigateMenu('delete')}><i className="fa-solid fa-trash w-5"></i> Delete Operation</Button>
+                    <Button variant="ghost" className="justify-start w-full" onClick={() => log(`Total Number of Nodes: ${nodes.length}`)}><i className="fa-solid fa-list w-5"></i> Count Nodes</Button>
+                    <Button variant="ghost" className="justify-start w-full text-amber-600 hover:bg-amber-50" onClick={() => navigateMenu('recycle', true)}><i className="fa-solid fa-rotate w-5"></i> Recycle Bin</Button>
+                  </div>
+                )}
+
+                {activeMenu !== 'main' && (
+                  <div className="p-4 space-y-4">
+                    <button onClick={() => navigateMenu('main')} className="text-sm text-blue-600 font-medium hover:underline flex items-center gap-1">
+                      <i className="fa-solid fa-arrow-left"></i> Back to Operations
+                    </button>
+                    
+                    {/* Insert Menu */}
+                    {activeMenu === 'insert' && (
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-slate-800">Insert Node</h3>
+                        {!activeSubMenu ? (
+                          <div className="space-y-2">
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('beg')}>At Beginning</Button>
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('end')}>At End</Button>
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('pos')}>At Given Position</Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="text-sm font-semibold text-slate-500 mb-2">TID: TWEET{autoId}</div>
+                            <Input label="User Name" name="name" value={formData.name} onChange={handleInputChange} placeholder="Enter name" />
+                            <Input label="Tweet Content" name="tweet" value={formData.tweet} onChange={handleInputChange} placeholder="Enter tweet" />
+                            {activeSubMenu === 'pos' && <Input label={`Position (1 - ${nodes.length + 1})`} name="pos" type="number" value={formData.pos} onChange={handleInputChange} />}
+                            <Button className="w-full" onClick={() => handleInsert(activeSubMenu)}>Confirm Insert</Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Delete Menu */}
+                    {activeMenu === 'delete' && (
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-slate-800">Delete Node</h3>
+                        {!activeSubMenu ? (
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{appMode === 'doubly' ? 'Temporary Delete' : 'Delete (To Recycle Bin)'}</p>
+                              <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('temp_beg')}>At Beginning</Button>
+                              <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('temp_end')}>At End</Button>
+                              <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('temp_pos')}>At Given Position</Button>
+                            </div>
+                            {appMode === 'doubly' && (
+                              <div className="space-y-2 border-t pt-4">
+                                <p className="text-xs font-semibold text-red-500 uppercase tracking-wider">Permanent Delete</p>
+                                <Button variant="danger" className="w-full justify-start bg-red-100 hover:bg-red-200 text-red-700" onClick={() => setActiveSubMenu('perm_beg')}>At Beginning</Button>
+                                <Button variant="danger" className="w-full justify-start bg-red-100 hover:bg-red-200 text-red-700" onClick={() => setActiveSubMenu('perm_end')}>At End</Button>
+                                <Button variant="danger" className="w-full justify-start bg-red-100 hover:bg-red-200 text-red-700" onClick={() => setActiveSubMenu('perm_pos')}>At Given Position</Button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {activeSubMenu.includes('pos') ? (
+                               <>
+                                 <Input label={`Position (1 - ${nodes.length})`} name="pos" type="number" value={formData.pos} onChange={handleInputChange} />
+                                 <Button variant={activeSubMenu.startsWith('perm') ? 'danger' : 'primary'} className="w-full" onClick={() => handleDelete('pos', activeSubMenu.startsWith('perm'))}>Confirm Delete</Button>
+                               </>
+                            ) : (
+                               <div className="text-center py-4">
+                                 <p className="text-slate-600 mb-4">Delete from {activeSubMenu.includes('beg') ? 'beginning' : 'end'}?</p>
+                                 <Button variant={activeSubMenu.startsWith('perm') ? 'danger' : 'primary'} className="w-full" onClick={() => handleDelete(activeSubMenu.split('_')[1], activeSubMenu.startsWith('perm'))}>Confirm Delete</Button>
+                               </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Traverse Menu */}
+                    {activeMenu === 'traverse' && (
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-slate-800">Traversal</h3>
+                        <div className="space-y-2">
+                          <Button variant="secondary" className="w-full justify-start" onClick={() => handleTraverse('forward')}>Forward Traversal</Button>
+                          {appMode === 'doubly' && <Button variant="secondary" className="w-full justify-start" onClick={() => handleTraverse('backward')}>Backward Traversal</Button>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Search Menu */}
+                    {activeMenu === 'search' && (
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-slate-800">Search Node</h3>
+                        {!activeSubMenu ? (
+                          <div className="space-y-2">
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('id')}>By Tweet ID</Button>
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('name')}>By User Name</Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <Input label={activeSubMenu === 'id' ? 'Tweet ID (e.g. 1001)' : 'User Name'} name="query" value={formData.query} onChange={handleInputChange} />
+                            <Button className="w-full" onClick={() => handleSearch(activeSubMenu)}>Search</Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Recycle Bin Menu */}
+                    {activeMenu === 'recycle' && (
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-amber-600">Recycle Bin</h3>
+                        {!activeSubMenu ? (
+                          <div className="space-y-2">
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => log("Viewing recycle bin in main panel.")}>View Recycle Bin</Button>
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => setActiveSubMenu('recover')}>Recover Tweet</Button>
+                            <Button variant="danger" className="w-full justify-start bg-red-100 text-red-700" onClick={() => setActiveSubMenu('delete_perm')}>Permanent Delete</Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <Input label="Enter Tweet ID to select" name="query" value={formData.query} onChange={handleInputChange} />
+                            <Button variant={activeSubMenu === 'delete_perm' ? 'danger' : 'primary'} className="w-full" onClick={activeSubMenu === 'delete_perm' ? handleRecycleDelete : handleRecycleRecover}>
+                              {activeSubMenu === 'delete_perm' ? 'Permanently Delete' : 'Recover Item'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Visualizer & Console Panel */}
+            <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col shrink-0 min-h-[300px]">
+                <h2 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                  <i className={`fa-solid ${viewingRecycle ? 'fa-rotate text-amber-500' : 'fa-desktop text-blue-500'}`}></i>
+                  {viewingRecycle ? "Recycle Bin Visualizer" : "Live Linked List Visualizer"}
+                </h2>
+                <div className="flex-1 overflow-y-auto">
+                  <NodeVisualizer nodes={viewingRecycle ? recycleNodes : nodes} mode={appMode} isRecycleBin={viewingRecycle} highlightedId={highlightedId} />
+                </div>
+              </div>
+
+              <div className="bg-slate-900 rounded-xl shadow-inner border border-slate-700 flex flex-col flex-1 min-h-[200px] overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-800 bg-slate-950 flex justify-between items-center shrink-0">
+                  <span className="text-xs font-mono text-slate-400">Terminal Output</span>
+                  <button onClick={() => setLogs([])} className="text-xs text-slate-500 hover:text-white transition-colors">Clear</button>
+                </div>
+                <div className="p-4 flex-1 overflow-y-auto font-mono text-sm">
+                  {logs.length === 0 ? (
+                    <div className="text-slate-600 italic">No output yet. Perform an operation...</div>
+                  ) : (
+                    <div className="space-y-1">
+                      {logs.map((logStr, i) => <div key={i} className="text-green-400 whitespace-pre-wrap">{logStr}</div>)}
+                      <div ref={consoleEndRef} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Render App to root div
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
